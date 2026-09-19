@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+.vscode/
+.idea/
+verification/
+*.tsbuildinfo
+
+# The settlement PDF supplied with the project. It is a scan of a filled-in
+# SAMPLE sheet - another driver's trip on page 1 - hidden under white
+# rectangles. public/settlement-template.pdf is built from it with that data
+# permanently removed, and is committed, so the app and its tests do not need
+# this file. Keep it locally if you want to re-run `npm run build:template`.
+reference/Dustin_Douglas_Trip_39586_Settlement_Fillable.pdf
