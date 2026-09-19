@@ -22,9 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 24: jsdom 30, undici 8 and whatwg-url 17 (pulled in by the jsdom
+      # test environment) require Node 22.19+/24.15+. On Node 20 `npm ci` only
+      # warns, then undici fails at runtime with
+      # "webidl.util.markAsUncloneable is not a function".
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - run: npm ci
