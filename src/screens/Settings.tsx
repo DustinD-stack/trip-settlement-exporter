@@ -199,7 +199,12 @@ export function SettingsScreen({ store }: { store: AppStore }) {
                   <tr key={record.id}>
                     <td>{new Date(record.exportedAt).toLocaleString()}</td>
                     <td>{record.tripNumber || '(no number)'}</td>
-                    <td>{record.kind === 'fillable' ? 'Fillable' : 'Ready to email'}</td>
+                    <td>
+                      {record.kind === 'fillable' ? 'Fillable' : 'Ready to email'}
+                      {record.envelopeDate && (
+                        <span className="zero"> - Monday envelope {record.envelopeDate}</span>
+                      )}
+                    </td>
                     <td>{record.fileName}</td>
                   </tr>
                 ))}
