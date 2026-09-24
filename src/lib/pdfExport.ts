@@ -29,6 +29,7 @@ import {
   type FieldSpec,
 } from '../config/pdfFieldMapping'
 import { buildFieldValues, type FieldValues } from './pdfValues'
+import { sanitizePdfValues } from './pdfText'
 import { calculateTrip } from './calc'
 import type { Trip } from '../types'
 
@@ -132,13 +133,16 @@ export async function buildFlattenedPdf(
   templateBytes: Uint8Array,
 ): Promise<Uint8Array> {
   assertKnownFields(values)
+  // Fold pasted punctuation to ASCII: Helvetica is WinAnsi-encoded and pdf-lib
+  // throws on anything it cannot represent. The stored trip is untouched.
+  const safe = sanitizePdfValues(values)
   const doc = await openTemplate(templateBytes)
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const pages = doc.getPages()
 
   for (const spec of PDF_FIELDS) {
     if (spec.name === SIGNATURE_FIELD) continue // always blank
-    drawValue(pages[spec.page], font, spec, values[spec.name] ?? '')
+    drawValue(pages[spec.page], font, spec, safe[spec.name] ?? '')
   }
   return doc.save({ useObjectStreams: false })
 }
@@ -149,6 +153,9 @@ export async function buildFillablePdf(
   templateBytes: Uint8Array,
 ): Promise<Uint8Array> {
   assertKnownFields(values)
+  // Same sanitising as the flattened build: an AcroForm field's appearance
+  // stream is drawn with the same WinAnsi font and fails the same way.
+  const safe = sanitizePdfValues(values)
   const doc = await openTemplate(templateBytes)
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const form = doc.getForm()
@@ -159,7 +166,7 @@ export async function buildFillablePdf(
     field.setAlignment(
       spec.align === 'right' ? 2 : spec.align === 'center' ? 1 : 0,
     )
-    const raw = spec.name === SIGNATURE_FIELD ? '' : (values[spec.name] ?? '').trim()
+    const raw = spec.name === SIGNATURE_FIELD ? '' : (safe[spec.name] ?? '').trim()
     const fitted = fitText(raw, spec, (t, size) => font.widthOfTextAtSize(t, size))
     field.setText(fitted.text)
     // addToPage creates the widget and its default-appearance entry, so the

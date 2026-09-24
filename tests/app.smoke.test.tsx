@@ -232,6 +232,116 @@ describe('the application', () => {
     }
   })
 
+  it('combines two completed trips into one two-page Monday envelope', async () => {
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('Trip Settlement Exporter')).toBeTruthy())
+
+    const addTrip = (
+      tripNumber: string,
+      start: string,
+      end: string,
+      beginOdo: string,
+      endOdo: string,
+      miles: string,
+      state: string,
+      highways: string,
+    ) => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Add a trip' })[0])
+      fireEvent.click(screen.getByRole('button', { name: 'Trip Details' }))
+      type('Driver name', 'Dustin Douglas')
+      type('Trip number', tripNumber)
+      type('Start date', start)
+      type('End date', end)
+      type('Beginning odometer', beginOdo)
+      type('Ending odometer', endOdo)
+      type('Paid miles', miles)
+      type(/Mileage rate/, '1')
+      fireEvent.click(screen.getByRole('button', { name: 'State Miles' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add a state row' }))
+      type('State for row 1', state)
+      type('Miles for row 1', miles)
+      // A pasted non-breaking hyphen, the exact input that used to crash export.
+      type('Highways for row 1', highways)
+      fireEvent.click(screen.getByRole('button', { name: 'Trip Details' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: /ready to export/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }))
+    }
+
+    addTrip('9001', '2026-09-15', '2026-09-16', '1000', '1500', '500', 'IA', 'I‑080')
+    addTrip('9002', '2026-09-18', '2026-09-19', '1500', '2100', '600', 'IA', 'US‑30')
+
+    fireEvent.click(screen.getByRole('button', { name: 'PDF Export' }))
+    expect(screen.getByText('Combine trips into one Monday envelope')).toBeTruthy()
+
+    // Preview stays disabled until two trips are chosen.
+    const previewButton = () =>
+      screen.getByRole('button', { name: 'Preview Monday envelope' }) as HTMLButtonElement
+    fireEvent.click(screen.getByLabelText(/Include trip 9001/))
+    expect(screen.queryByRole('button', { name: 'Preview Monday envelope' })).toBeNull()
+
+    fireEvent.click(screen.getByLabelText(/Include trip 9002/))
+    expect(previewButton().disabled).toBe(false)
+
+    // The combined figures are shown before anything is exported.
+    const shown = screen.getAllByText(/1,100/)
+    expect(shown.length).toBeGreaterThan(0) // 500 + 600 paid miles
+    expect(screen.getAllByText('$1,100.00').length).toBeGreaterThan(0)
+
+    const mondayInput = screen.getByLabelText('Monday submission date') as HTMLInputElement
+    expect(mondayInput.value).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    const [y, m, d] = mondayInput.value.split('-').map(Number)
+    expect(new Date(y, m - 1, d).getDay()).toBe(1) // a Monday
+    fireEvent.change(mondayInput, { target: { value: '2026-09-28' } })
+
+    await act(async () => {
+      fireEvent.click(previewButton())
+    })
+    await waitFor(() => expect(screen.getByLabelText('Monday envelope preview')).toBeTruthy(), {
+      timeout: 20_000,
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Download ready-to-email envelope' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Download fillable envelope' }))
+    })
+    await waitFor(() => expect(downloads.length).toBe(2), { timeout: 20_000 })
+    await waitFor(() => expect(downloads.every((f) => f.bytes.length > 0)).toBe(true), {
+      timeout: 20_000,
+    })
+
+    expect(downloads[0].fileName).toBe(
+      'Dustin_Douglas_Monday_Envelope_2026-09-28_Trips_9001-9002.pdf',
+    )
+    expect(downloads[1].fileName).toBe(
+      'Dustin_Douglas_Monday_Envelope_2026-09-28_Trips_9001-9002_Fillable.pdf',
+    )
+
+    // ONE settlement of two pages - not a four-page stack.
+    const flat = await PDFDocument.load(downloads[0].bytes)
+    expect(flat.getPageCount()).toBe(2)
+    expect(flat.getForm().getFields()).toHaveLength(0)
+
+    const fillable = await PDFDocument.load(downloads[1].bytes)
+    expect(fillable.getPageCount()).toBe(2)
+    const form = fillable.getForm()
+    expect(form.getTextField('trip_number').getText()).toBe('9001, 9002')
+    expect(form.getTextField('beginning_odometer').getText()).toBe('1000')
+    expect(form.getTextField('ending_odometer').getText()).toBe('2100')
+    expect(form.getTextField('total_miles_pay').getText()).toBe('1,100.00')
+    // The two IA rows merged, with both highways and no non-breaking hyphen.
+    expect(form.getTextField('left_state_1').getText()).toBe('IA')
+    expect(form.getTextField('left_miles_1').getText()).toBe('1,100')
+    expect(form.getTextField('left_highways_1').getText()).toBe('I-080, US-30')
+    expect(form.getTextField('left_state_2').getText() ?? '').toBe('')
+    expect(form.getTextField('driver_signature').getText() ?? '').toBe('')
+
+    // Both source trips are still there, separate and unchanged.
+    fireEvent.click(screen.getByRole('button', { name: 'Weekly Pay' }))
+    const body = document.body.innerText ?? document.body.textContent ?? ''
+    expect(body).toContain('9001')
+    expect(body).toContain('9002')
+  })
+
   it('blocks an export when the ending odometer is below the beginning', async () => {
     render(<App />)
     await waitFor(() => expect(screen.getByText('Trip Settlement Exporter')).toBeTruthy())

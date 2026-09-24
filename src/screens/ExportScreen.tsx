@@ -17,6 +17,7 @@ import { downloadBytes, PDF_MIME } from '../lib/download'
 import { formatCurrency, formatMiles, formatSignedMiles } from '../lib/money'
 import { newId } from '../lib/trips'
 import { Empty, IssueList, Panel, Tile } from '../components/ui'
+import { MondayEnvelopePanel } from './MondayEnvelopePanel'
 import type { AppStore } from '../useAppData'
 
 
@@ -159,6 +160,7 @@ export function ExportScreen({ store }: { store: AppStore }) {
         <Panel title="PDF preview and export">
           <Empty>Select a trip on Weekly Pay first.</Empty>
         </Panel>
+        <MondayEnvelopePanel store={store} />
         <WeekPanel onExport={exportWeek} busy={busy} count={data.trips.filter((t) => t.complete).length} message={weekMessage} />
       </>
     )
@@ -268,6 +270,7 @@ export function ExportScreen({ store }: { store: AppStore }) {
         )}
       </Panel>
 
+      <MondayEnvelopePanel store={store} />
       <WeekPanel onExport={exportWeek} busy={busy} count={data.trips.filter((t) => t.complete).length} message={weekMessage} />
     </>
   )

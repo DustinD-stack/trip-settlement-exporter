@@ -133,6 +133,8 @@ export interface ExportRecord {
   exportedAt: string
   kind: 'flattened' | 'fillable'
   fileName: string
+  /** Set when the trip went out as part of a combined Monday envelope. */
+  envelopeDate?: string
 }
 
 export interface AppData {
