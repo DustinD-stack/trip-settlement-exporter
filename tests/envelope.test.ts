@@ -206,6 +206,117 @@ describe('combined totals', () => {
   })
 })
 
+describe('every selected trip contributes a From/To pair', () => {
+  /** A trip with no Routes & Stops rows, carrying only Origin/Destination. */
+  const noRouteRows = (overrides: Partial<Trip> = {}): Trip => ({
+    ...laterTrip(),
+    routes: [],
+    origin: '12300 Jim Dhamer Dr Huntley, IL 60142',
+    destination: '4000 N Kedzie Ave Chicago, IL 60618',
+    ...overrides,
+  })
+
+  it('falls back to a trip Origin and Destination when it has no route rows', () => {
+    const envelope = envelopeOf([createTrip39586Fixture(), noRouteRows()])
+    expect(envelope.trip.routes).toHaveLength(2)
+
+    const [first, second] = envelope.trip.routes
+    expect(first.from).toContain('Ontario') // trip A's explicit row
+    expect(first.to).toContain('Huntley')
+    expect(second.from).toBe('12300 Jim Dhamer Dr Huntley, IL 60142') // trip B's fallback
+    expect(second.to).toBe('4000 N Kedzie Ave Chicago, IL 60618')
+  })
+
+  it('prints both pairs on the settlement rather than losing one', () => {
+    const values = buildFieldValues(envelopeOf([createTrip39586Fixture(), noRouteRows()]).trip)
+    expect(values.route_1_from).toContain('Ontario')
+    expect(values.route_1_to).toContain('Huntley')
+    expect(values.route_2_from).toContain('Huntley')
+    expect(values.route_2_to).toContain('Kedzie')
+    expect(values.route_3_from).toBe('')
+  })
+
+  it('gives explicit route rows priority and never duplicates the leg', () => {
+    // Trip B has BOTH route rows and an Origin/Destination. Only the rows count.
+    const withBoth = {
+      ...laterTrip(),
+      origin: 'SHOULD NOT APPEAR',
+      destination: 'SHOULD NOT APPEAR EITHER',
+    }
+    const envelope = envelopeOf([createTrip39586Fixture(), withBoth])
+
+    expect(envelope.trip.routes).toHaveLength(2) // one row each, not three
+    const printed = Object.values(buildFieldValues(envelope.trip)).join('|')
+    expect(printed).not.toContain('SHOULD NOT APPEAR')
+  })
+
+  it('keeps one pair per trip when neither trip has route rows', () => {
+    const a = { ...createTrip39586Fixture(), routes: [], origin: 'Ontario, CA', destination: 'Huntley, IL' }
+    const b = noRouteRows({ origin: 'Huntley, IL', destination: 'Chicago, IL' })
+    const envelope = envelopeOf([a, b])
+
+    expect(envelope.trip.routes.map((r) => [r.from, r.to])).toEqual([
+      ['Ontario, CA', 'Huntley, IL'],
+      ['Huntley, IL', 'Chicago, IL'],
+    ])
+  })
+
+  it('contributes nothing for a trip with neither rows nor addresses', () => {
+    const blank = noRouteRows({ origin: '', destination: '' })
+    const envelope = envelopeOf([createTrip39586Fixture(), blank])
+    expect(envelope.trip.routes).toHaveLength(1)
+    expect(envelope.trip.routes[0].from).toContain('Ontario')
+  })
+
+  it('ignores blank route rows and still falls back', () => {
+    const blankRow = noRouteRows({
+      routes: [
+        { id: 'empty', order: 1, type: '', from: '  ', to: '', isPickup: false, isDelivery: false, notes: 'note only' },
+      ],
+    })
+    const envelope = envelopeOf([createTrip39586Fixture(), blankRow])
+    expect(envelope.trip.routes).toHaveLength(2)
+    expect(envelope.trip.routes[1].from).toContain('Huntley')
+  })
+
+  it('numbers the combined stops from 1 without gaps', () => {
+    const envelope = envelopeOf([
+      createTrip39586Fixture(),
+      noRouteRows(),
+      { ...noRouteRows(), id: 'trip-c', tripNumber: '40200', startDate: '2026-09-22', endDate: '2026-09-23', origin: 'C1', destination: 'C2' },
+    ])
+    expect(envelope.trip.routes.map((r) => r.order)).toEqual([1, 2, 3])
+  })
+
+  it('leaves the source trips untouched by the fallback', () => {
+    const b = noRouteRows()
+    const before = JSON.stringify(b)
+    envelopeOf([createTrip39586Fixture(), b])
+    expect(JSON.stringify(b)).toBe(before)
+    expect(b.routes).toHaveLength(0)
+  })
+})
+
+describe('the combined state-mile total', () => {
+  it('prints the calculated total on the settlement', () => {
+    const values = buildFieldValues(envelopeOf([createTrip39586Fixture(), laterTrip()]).trip)
+    expect(values.left_state_miles_total).toBe('2,848') // 2,068 + 780
+    expect(values.right_state_miles_total).toBe('')
+  })
+
+  it('prints every merged state row', () => {
+    const values = buildFieldValues(envelopeOf([createTrip39586Fixture(), laterTrip()]).trip)
+    const states = Array.from({ length: 20 }, (_, i) => values[`left_state_${i + 1}`]).filter(Boolean)
+    // 39586 covers CA NV AZ UT CO NE IA IL; the later trip adds WI and more IL.
+    expect(states).toEqual(['CA', 'NV', 'AZ', 'UT', 'CO', 'NE', 'IA', 'IL', 'WI'])
+    expect(new Set(states).size).toBe(states.length) // no state printed twice
+
+    const il = states.indexOf('IL') + 1
+    expect(values[`left_miles_${il}`]).toBe('850') // 150 + 700, added together
+    expect(values[`left_highways_${il}`]).toBe('I-80, I-39, US-20, IL-47, I-90, I-294')
+  })
+})
+
 describe('merging state miles', () => {
   const envelope = envelopeOf([createTrip39586Fixture(), laterTrip()])
   const rows = envelope.trip.stateMiles

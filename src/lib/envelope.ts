@@ -207,13 +207,40 @@ function moneyField(values: number[]): string {
   return Math.abs(total) < 0.005 ? '' : String(roundMoney(total))
 }
 
-/** All stops, in trip order then stop order, renumbered from 1. */
+/**
+ * All stops, in trip order then stop order, renumbered from 1.
+ *
+ * Every selected trip contributes at least one From/To pair. A trip that has
+ * Routes & Stops rows contributes those rows and nothing else - explicit rows
+ * win, and its Origin/Destination are NOT added on top, which would duplicate
+ * the same leg. A trip with no usable rows falls back to the Origin and
+ * Destination from Trip Details, so its addresses are never silently dropped
+ * from the envelope.
+ */
 function combineRoutes(ordered: Trip[]): Trip['routes'] {
-  const stops = ordered.flatMap((trip) =>
-    [...trip.routes]
+  const stops = ordered.flatMap((trip) => {
+    const explicit = [...trip.routes]
+      .filter((stop) => stop.from.trim() || stop.to.trim())
       .sort((a, b) => a.order - b.order)
-      .map((stop) => ({ ...stop, id: `${trip.id}:${stop.id}` })),
-  )
+      .map((stop) => ({ ...stop, id: `${trip.id}:${stop.id}` }))
+
+    if (explicit.length > 0) return explicit
+
+    if (!trip.origin.trim() && !trip.destination.trim()) return []
+    return [
+      {
+        id: `${trip.id}:origin-destination`,
+        order: 1,
+        type: '' as Trip['routes'][number]['type'],
+        from: trip.origin,
+        to: trip.destination,
+        isPickup: false,
+        isDelivery: false,
+        notes: '',
+      },
+    ]
+  })
+
   return stops.map((stop, index) => ({ ...stop, order: index + 1 }))
 }
 
