@@ -245,6 +245,8 @@ describe('the application', () => {
       miles: string,
       state: string,
       highways: string,
+      origin: string,
+      destination: string,
     ) => {
       fireEvent.click(screen.getAllByRole('button', { name: 'Add a trip' })[0])
       fireEvent.click(screen.getByRole('button', { name: 'Trip Details' }))
@@ -256,6 +258,10 @@ describe('the application', () => {
       type('Ending odometer', endOdo)
       type('Paid miles', miles)
       type(/Mileage rate/, '1')
+      // Neither trip gets Routes & Stops rows, so the envelope has to fall
+      // back to these addresses for each trip.
+      type('Origin', origin)
+      type('Destination', destination)
       fireEvent.click(screen.getByRole('button', { name: 'State Miles' }))
       fireEvent.click(screen.getByRole('button', { name: 'Add a state row' }))
       type('State for row 1', state)
@@ -267,8 +273,8 @@ describe('the application', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }))
     }
 
-    addTrip('9001', '2026-09-15', '2026-09-16', '1000', '1500', '500', 'IA', 'I‑080')
-    addTrip('9002', '2026-09-18', '2026-09-19', '1500', '2100', '600', 'IA', 'US‑30')
+    addTrip('9001', '2026-09-15', '2026-09-16', '1000', '1500', '500', 'IA', 'I‑080', 'Ontario, CA', 'Huntley, IL')
+    addTrip('9002', '2026-09-18', '2026-09-19', '1500', '2100', '600', 'IA', 'US‑30', 'Huntley, IL', 'Chicago, IL')
 
     fireEvent.click(screen.getByRole('button', { name: 'PDF Export' }))
     expect(screen.getByText('Combine trips into one Monday envelope')).toBeTruthy()
@@ -333,6 +339,13 @@ describe('the application', () => {
     expect(form.getTextField('left_miles_1').getText()).toBe('1,100')
     expect(form.getTextField('left_highways_1').getText()).toBe('I-080, US-30')
     expect(form.getTextField('left_state_2').getText() ?? '').toBe('')
+    expect(form.getTextField('left_state_miles_total').getText()).toBe('1,100')
+    // Each trip keeps its own From/To pair even though neither had route rows.
+    expect(form.getTextField('route_1_from').getText()).toBe('Ontario, CA')
+    expect(form.getTextField('route_1_to').getText()).toBe('Huntley, IL')
+    expect(form.getTextField('route_2_from').getText()).toBe('Huntley, IL')
+    expect(form.getTextField('route_2_to').getText()).toBe('Chicago, IL')
+    expect(form.getTextField('route_3_from').getText() ?? '').toBe('')
     expect(form.getTextField('driver_signature').getText() ?? '').toBe('')
 
     // Both source trips are still there, separate and unchanged.
