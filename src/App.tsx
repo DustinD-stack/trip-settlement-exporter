@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAppData } from './useAppData'
+import { NavMenu } from './components/NavMenu'
 import { Dashboard } from './screens/Dashboard'
 import { WeeklyPay } from './screens/WeeklyPay'
 import { TripDetails } from './screens/TripDetails'
@@ -39,6 +40,7 @@ const SCREENS: Array<{ id: ScreenId; label: string }> = [
 export default function App() {
   const store = useAppData()
   const [screen, setScreen] = useState<ScreenId>('dashboard')
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const openTrip = (id: string) => {
     store.selectTrip(id)
@@ -65,6 +67,15 @@ export default function App() {
   return (
     <div className="app">
       <header className="masthead">
+        {/* Only shown on narrow screens; the tab strip takes over above that. */}
+        <button
+          className="menu-button"
+          onClick={() => setMenuOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={menuOpen}
+        >
+          Menu
+        </button>
         <h1>Trip Settlement Exporter</h1>
         <span className="selected">
           {selected ? (
@@ -77,6 +88,14 @@ export default function App() {
           )}
         </span>
       </header>
+
+      <NavMenu
+        items={SCREENS}
+        current={screen}
+        open={menuOpen}
+        onSelect={setScreen}
+        onClose={() => setMenuOpen(false)}
+      />
 
       <nav className="tabs" aria-label="Sections">
         {SCREENS.map((item) => (
