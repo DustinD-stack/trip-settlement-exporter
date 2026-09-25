@@ -304,57 +304,198 @@ describe('the combined state-mile total', () => {
     expect(values.right_state_miles_total).toBe('')
   })
 
-  it('prints every merged state row', () => {
+  it('prints every state row in travel order, Illinois twice', () => {
     const values = buildFieldValues(envelopeOf([createTrip39586Fixture(), laterTrip()]).trip)
     const states = Array.from({ length: 20 }, (_, i) => values[`left_state_${i + 1}`]).filter(Boolean)
-    // 39586 covers CA NV AZ UT CO NE IA IL; the later trip adds WI and more IL.
-    expect(states).toEqual(['CA', 'NV', 'AZ', 'UT', 'CO', 'NE', 'IA', 'IL', 'WI'])
-    expect(new Set(states).size).toBe(states.length) // no state printed twice
+    // 39586 covers CA NV AZ UT CO NE IA IL; the later trip adds IL again, then WI.
+    expect(states).toEqual(['CA', 'NV', 'AZ', 'UT', 'CO', 'NE', 'IA', 'IL', 'IL', 'WI'])
 
-    const il = states.indexOf('IL') + 1
-    expect(values[`left_miles_${il}`]).toBe('850') // 150 + 700, added together
-    expect(values[`left_highways_${il}`]).toBe('I-80, I-39, US-20, IL-47, I-90, I-294')
+    // The two Illinois rows keep their own mileage and their own highways.
+    expect(values.left_miles_8).toBe('150')
+    expect(values.left_highways_8).toBe('I-80, I-39, US-20, IL-47')
+    expect(values.left_miles_9).toBe('700')
+    expect(values.left_highways_9).toBe('I-90, I-294')
   })
 })
 
-describe('merging state miles', () => {
-  const envelope = envelopeOf([createTrip39586Fixture(), laterTrip()])
-  const rows = envelope.trip.stateMiles
-  const row = (state: string) => rows.find((r) => r.state === state)!
+/* ------------------------------------------------------------------ *
+ * State rows stay in travel order and are never merged.
+ * ------------------------------------------------------------------ */
 
-  it('merges rows for the same state and sums their miles', () => {
-    // 39586 has IL 150 (I-80, I-39, US-20, IL-47); the later trip has IL 700.
-    expect(rows.filter((r) => r.state === 'IL')).toHaveLength(1)
-    expect(row('IL').miles).toBe('850')
-  })
+describe('state miles in trip order', () => {
+  /** The worked example from the specification. */
+  const exampleTrips = (): [Trip, Trip] => [
+    {
+      ...createTrip39586Fixture(),
+      id: 'ex-1', tripNumber: 'EX-1', startDate: '2026-09-15', endDate: '2026-09-16',
+      beginningOdometer: '1000', endingOdometer: '1750', paidMiles: '750',
+      stateMiles: [
+        { id: 'a', state: 'CA', miles: '100', highways: 'I-15' },
+        { id: 'b', state: 'NV', miles: '200', highways: 'I-15' },
+        { id: 'c', state: 'IA', miles: '300', highways: 'I-80' },
+        { id: 'd', state: 'IL', miles: '150', highways: 'I-80, I-39' },
+      ],
+    },
+    {
+      ...laterTrip(),
+      id: 'ex-2', tripNumber: 'EX-2', startDate: '2026-09-18', endDate: '2026-09-19',
+      beginningOdometer: '1750', endingOdometer: '2530', paidMiles: '780',
+      stateMiles: [
+        { id: 'e', state: 'IL', miles: '700', highways: 'I-90, I-294' },
+        { id: 'f', state: 'WI', miles: '80', highways: 'I-43' },
+      ],
+    },
+  ]
 
-  it('keeps unrepeated states as they were', () => {
-    expect(row('CA').miles).toBe('287')
-    expect(row('WI').miles).toBe('80')
-  })
+  const asText = (trip: Trip) =>
+    trip.stateMiles.map((row) => `${row.state} - ${row.miles} - ${row.highways}`)
 
-  it('combines highways without repeating any', () => {
-    const highways = row('IL').highways.split(', ')
-    expect(highways).toEqual(['I-80', 'I-39', 'US-20', 'IL-47', 'I-90', 'I-294'])
-    expect(new Set(highways).size).toBe(highways.length)
-  })
-
-  it('does not repeat a highway that both trips listed', () => {
-    const overlapping = envelopeOf([
-      { ...createTrip39586Fixture(), stateMiles: [{ id: 's1', state: 'IA', miles: '100', highways: 'I-80, US-30' }] },
-      { ...laterTrip(), stateMiles: [{ id: 's2', state: 'IA', miles: '60', highways: 'US-30, I-380' }] },
+  it('reproduces the specified order exactly', () => {
+    expect(asText(combineTrips({ trips: exampleTrips(), mondayDate: '2026-09-28' }).trip)).toEqual([
+      'CA - 100 - I-15',
+      'NV - 200 - I-15',
+      'IA - 300 - I-80',
+      'IL - 150 - I-80, I-39',
+      'IL - 700 - I-90, I-294',
+      'WI - 80 - I-43',
     ])
-    const ia = overlapping.trip.stateMiles.find((r) => r.state === 'IA')!
-    expect(ia.miles).toBe('160')
-    expect(ia.highways).toBe('I-80, US-30, I-380')
   })
 
-  it('totals the merged rows without adjusting anything', () => {
+  it('keeps matching states from different trips as separate rows', () => {
+    const rows = combineTrips({ trips: exampleTrips(), mondayDate: '2026-09-28' }).trip.stateMiles
+    const illinois = rows.filter((row) => row.state === 'IL')
+    expect(illinois).toHaveLength(2)
+    expect(illinois.map((row) => row.miles)).toEqual(['150', '700'])
+    // Explicitly NOT one 850-mile row.
+    expect(rows.some((row) => row.miles === '850')).toBe(false)
+  })
+
+  it('keeps adjacent matching states separate', () => {
+    // The last row of trip 1 and the first row of trip 2 are both Illinois,
+    // so they end up next to each other. They must still be two rows.
+    const rows = combineTrips({ trips: exampleTrips(), mondayDate: '2026-09-28' }).trip.stateMiles
+    expect(rows[3].state).toBe('IL')
+    expect(rows[4].state).toBe('IL')
+    expect(rows[3].miles).not.toBe(rows[4].miles)
+  })
+
+  it('does not deduplicate highways across separate rows', () => {
+    const [a, b] = exampleTrips()
+    a.stateMiles = [{ id: 'x', state: 'IA', miles: '100', highways: 'I-80, US-30' }]
+    b.stateMiles = [{ id: 'y', state: 'IA', miles: '60', highways: 'US-30, I-380' }]
+    const rows = combineTrips({ trips: [a, b], mondayDate: '2026-09-28' }).trip.stateMiles
+    expect(rows.map((row) => row.highways)).toEqual(['I-80, US-30', 'US-30, I-380'])
+  })
+
+  it('shows a state revisited later as another row', () => {
+    const [a, b] = exampleTrips()
+    a.stateMiles = [{ id: 'x', state: 'CA', miles: '100', highways: 'I-5' }]
+    b.stateMiles = [
+      { id: 'y', state: 'NV', miles: '50', highways: 'I-15' },
+      { id: 'z', state: 'CA', miles: '90', highways: 'I-15' }, // back into CA
+    ]
+    const rows = combineTrips({ trips: [a, b], mondayDate: '2026-09-28' }).trip.stateMiles
+    expect(rows.map((row) => row.state)).toEqual(['CA', 'NV', 'CA'])
+    expect(rows.map((row) => row.miles)).toEqual(['100', '50', '90'])
+  })
+
+  it('preserves each trip internal row order', () => {
+    const rows = combineTrips({ trips: exampleTrips(), mondayDate: '2026-09-28' }).trip.stateMiles
+    expect(rows.slice(0, 4).map((row) => row.state)).toEqual(['CA', 'NV', 'IA', 'IL'])
+    expect(rows.slice(4).map((row) => row.state)).toEqual(['IL', 'WI'])
+  })
+
+  it('orders chronologically however the trips were selected', () => {
+    const [a, b] = exampleTrips()
+    const forwards = combineTrips({ trips: [a, b], mondayDate: '2026-09-28' })
+    const backwards = combineTrips({ trips: [b, a], mondayDate: '2026-09-28' })
+    expect(asText(backwards.trip)).toEqual(asText(forwards.trip))
+    expect(backwards.trip.stateMiles[0].state).toBe('CA') // earliest trip first
+  })
+
+  it('gives every copied row a unique temporary id', () => {
+    const rows = combineTrips({ trips: exampleTrips(), mondayDate: '2026-09-28' }).trip.stateMiles
+    expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length)
+  })
+
+  it('adds every row into the combined total, including both Illinois rows', () => {
+    const envelope = combineTrips({ trips: exampleTrips(), mondayDate: '2026-09-28' })
     const totals = calculateTrip(envelope.trip)
-    expect(totals.stateMilesTotal).toBe(2068 + 780)
-    // Odometer span is 2,797 miles, so the state total is 51 over. It stays over.
+    expect(totals.stateMilesTotal).toBe(100 + 200 + 300 + 150 + 700 + 80) // 1,530
+    expect(totals.paidMiles).toBe(750 + 780) // 1,530
+    expect(totals.beginningOdometer).toBe(1000)
+    expect(totals.endingOdometer).toBe(2530)
+    expect(totals.actualMiles).toBe(1530)
+    // All three agree here, so the differences are zero and nothing is adjusted.
+    expect(totals.stateMilesDifference).toBe(0)
+    expect(totals.paidMilesDifference).toBe(0)
+  })
+
+  it('reports the exact differences without adjusting any mileage', () => {
+    const envelope = envelopeOf([createTrip39586Fixture(), laterTrip()])
+    const totals = calculateTrip(envelope.trip)
+    expect(totals.stateMilesTotal).toBe(2068 + 780) // 2,848
     expect(totals.actualMiles).toBe(2797)
-    expect(totals.stateMilesDifference).toBe(51)
+    expect(totals.stateMilesDifference).toBe(51) // reported, never corrected
+    expect(envelope.trip.stateMiles.reduce((n, r) => n + Number(r.miles), 0)).toBe(2848)
+  })
+
+  it('leaves the source trips untouched', () => {
+    const [a, b] = exampleTrips()
+    const before = JSON.stringify([a, b])
+    const envelope = combineTrips({ trips: [a, b], mondayDate: '2026-09-28' })
+    envelope.trip.stateMiles[0].miles = '999999'
+    envelope.trip.stateMiles[4].state = 'ZZ'
+    expect(JSON.stringify([a, b])).toBe(before)
+    expect(a.stateMiles[0].miles).toBe('100')
+    expect(b.stateMiles[0].state).toBe('IL')
+  })
+
+  it('warns rather than merging when the rows overflow the printed form', () => {
+    const rowsFor = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: `${prefix}${i}`, state: 'IA', miles: '10', highways: 'I-80',
+      }))
+    const [a, b] = exampleTrips()
+    a.stateMiles = rowsFor('a', 25)
+    b.stateMiles = rowsFor('b', 20) // 45 rows against a 40-row form
+    const envelope = combineTrips({ trips: [a, b], mondayDate: '2026-09-28' })
+
+    expect(envelope.trip.stateMiles).toHaveLength(45) // nothing discarded or merged
+    const warning = validateTripForExport(envelope.trip).warnings.find(
+      (w) => w.code === 'state-miles-overflow',
+    )!
+    expect(warning).toBeDefined()
+    expect(warning.message).toContain('45')
+    expect(warning.message).toContain('40')
+    expect(warning.detail).toContain('41-45') // says which rows will not fit
+    expect(warning.detail).toContain('nothing is deleted')
+    // Every row still counts towards the total the app reports.
+    expect(calculateTrip(envelope.trip).stateMilesTotal).toBe(450)
+  })
+
+  it('fills the printed rows in order and spills into the second column', () => {
+    const rowsFor = (prefix: string, count: number, state: string) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: `${prefix}${i}`, state, miles: String(i + 1), highways: `${state}-${i + 1}`,
+      }))
+    const [a, b] = exampleTrips()
+    a.stateMiles = rowsFor('a', 20, 'IA')
+    b.stateMiles = rowsFor('b', 5, 'WI')
+    const values = buildFieldValues(combineTrips({ trips: [a, b], mondayDate: '2026-09-28' }).trip)
+
+    expect(values.left_state_1).toBe('IA')
+    expect(values.left_miles_1).toBe('1')
+    expect(values.left_state_20).toBe('IA')
+    expect(values.left_miles_20).toBe('20')
+    // Row 21 onwards continues in the right-hand table.
+    expect(values.right_state_1).toBe('WI')
+    expect(values.right_miles_1).toBe('1')
+    expect(values.right_state_5).toBe('WI')
+    expect(values.right_state_6).toBe('')
+    // The left table still carries the whole total.
+    expect(values.left_state_miles_total).toBe('225') // 210 + 15
+    expect(values.right_state_miles_total).toBe('')
   })
 })
 

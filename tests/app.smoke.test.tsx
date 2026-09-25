@@ -9,7 +9,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { PDFDocument } from 'pdf-lib'
 import App from '../src/App'
 import { resetTemplateCache } from '../src/lib/pdfExport'
@@ -334,11 +334,16 @@ describe('the application', () => {
     expect(form.getTextField('beginning_odometer').getText()).toBe('1000')
     expect(form.getTextField('ending_odometer').getText()).toBe('2100')
     expect(form.getTextField('total_miles_pay').getText()).toBe('1,100.00')
-    // The two IA rows merged, with both highways and no non-breaking hyphen.
+    // Both trips crossed Iowa, and both rows stay - in travel order, each with
+    // its own mileage and highways, and no non-breaking hyphen left in either.
     expect(form.getTextField('left_state_1').getText()).toBe('IA')
-    expect(form.getTextField('left_miles_1').getText()).toBe('1,100')
-    expect(form.getTextField('left_highways_1').getText()).toBe('I-080, US-30')
-    expect(form.getTextField('left_state_2').getText() ?? '').toBe('')
+    expect(form.getTextField('left_miles_1').getText()).toBe('500')
+    expect(form.getTextField('left_highways_1').getText()).toBe('I-080')
+    expect(form.getTextField('left_state_2').getText()).toBe('IA')
+    expect(form.getTextField('left_miles_2').getText()).toBe('600')
+    expect(form.getTextField('left_highways_2').getText()).toBe('US-30')
+    expect(form.getTextField('left_state_3').getText() ?? '').toBe('')
+    // ...and the total still adds both rows.
     expect(form.getTextField('left_state_miles_total').getText()).toBe('1,100')
     // Each trip keeps its own From/To pair even though neither had route rows.
     expect(form.getTextField('route_1_from').getText()).toBe('Ontario, CA')
@@ -353,6 +358,91 @@ describe('the application', () => {
     const body = document.body.innerText ?? document.body.textContent ?? ''
     expect(body).toContain('9001')
     expect(body).toContain('9002')
+  })
+
+  describe('the navigation menu', () => {
+    const openMenu = () => fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
+    const dialog = () => screen.getByRole('dialog', { name: 'Sections' })
+
+    const ALL_SECTIONS = [
+      'Dashboard', 'Weekly Pay', 'Trip Details', 'Routes & Stops', 'State Miles',
+      'Fuel & DEF', 'Expenses', 'Advances', 'PDF Export', 'Settings & Backup',
+    ]
+
+    it('opens from the header and lists every section', async () => {
+      render(<App />)
+      await waitFor(() => expect(screen.getByText('Trip Settlement Exporter')).toBeTruthy())
+
+      expect(screen.queryByRole('dialog')).toBeNull()
+      openMenu()
+
+      const menu = dialog()
+      for (const section of ALL_SECTIONS) {
+        expect(within(menu).getByRole('button', { name: new RegExp(`^${section}`) })).toBeTruthy()
+      }
+      expect(within(menu).getAllByRole('button')).toHaveLength(ALL_SECTIONS.length + 1) // + Close
+    })
+
+    it('marks the active section and moves focus into the menu', async () => {
+      render(<App />)
+      await waitFor(() => expect(screen.getByText('Trip Settlement Exporter')).toBeTruthy())
+      openMenu()
+
+      const current = within(dialog())
+        .getAllByRole('button')
+        .filter((button) => button.getAttribute('aria-current') === 'page')
+      expect(current).toHaveLength(1)
+      expect(current[0].textContent).toContain('Dashboard')
+
+      // Focus lands inside the drawer rather than staying on the page behind.
+      expect(dialog().contains(document.activeElement)).toBe(true)
+    })
+
+    it('navigates to the chosen section and closes', async () => {
+      render(<App />)
+      await waitFor(() => expect(screen.getByText('Trip Settlement Exporter')).toBeTruthy())
+
+      openMenu()
+      fireEvent.click(within(dialog()).getByRole('button', { name: /^Settings & Backup/ }))
+
+      expect(screen.queryByRole('dialog')).toBeNull() // closed itself
+      expect(screen.getByText('Defaults for new trips')).toBeTruthy() // and navigated
+
+      // Reopening shows the new section as current.
+      openMenu()
+      const current = within(dialog())
+        .getAllByRole('button')
+        .find((button) => button.getAttribute('aria-current') === 'page')!
+      expect(current.textContent).toContain('Settings & Backup')
+    })
+
+    it('closes from the Close button, the backdrop and Escape', async () => {
+      render(<App />)
+      await waitFor(() => expect(screen.getByText('Trip Settlement Exporter')).toBeTruthy())
+
+      openMenu()
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Close' }))
+      expect(screen.queryByRole('dialog')).toBeNull()
+
+      openMenu()
+      fireEvent.click(screen.getByTestId('nav-menu-backdrop'))
+      expect(screen.queryByRole('dialog')).toBeNull()
+
+      openMenu()
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    it('leaves the desktop tab strip working', async () => {
+      render(<App />)
+      await waitFor(() => expect(screen.getByText('Trip Settlement Exporter')).toBeTruthy())
+
+      const tabs = screen.getByRole('navigation', { name: 'Sections' })
+      expect(within(tabs).getAllByRole('button')).toHaveLength(ALL_SECTIONS.length)
+
+      fireEvent.click(within(tabs).getByRole('button', { name: 'Expenses' }))
+      expect(screen.getByText('Expenses and reimbursements')).toBeTruthy()
+    })
   })
 
   it('blocks an export when the ending odometer is below the beginning', async () => {

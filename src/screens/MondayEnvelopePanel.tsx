@@ -152,6 +152,10 @@ export function MondayEnvelopePanel({ store }: { store: AppStore }) {
         Your trips stay separate. This builds one combined settlement to print; nothing is merged,
         renumbered or deleted, and each trip can still be exported on its own.
       </div>
+      <div className="notice">
+        State-mile rows stay in travel order from the first selected trip through the last.
+        Revisited states remain separate rows; the combined total adds every row.
+      </div>
 
       {completed.length < 2 ? (
         <Empty>

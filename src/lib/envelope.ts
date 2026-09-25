@@ -74,14 +74,6 @@ function uniqueJoin(values: string[], separator = ', '): string {
   return kept.join(separator)
 }
 
-/** Splits a highway list on commas/slashes and returns the individual names. */
-function splitHighways(value: string): string[] {
-  return value
-    .split(/[,;/]+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-}
-
 /* ------------------------------------------------------------------ *
  * Combining
  * ------------------------------------------------------------------ */
@@ -245,38 +237,31 @@ function combineRoutes(ordered: Trip[]): Trip['routes'] {
 }
 
 /**
- * Merges state rows: one row per state, miles summed, highways combined
- * without repeats. Miles are only ever added together - never adjusted to
- * reconcile with the odometer.
+ * Every state row from every trip, in travel order: all of the first trip's
+ * rows, then all of the second trip's, through to the last.
+ *
+ * Rows are deliberately NOT merged. Two trips that both crossed Illinois print
+ * as two Illinois rows, because that is what the driver actually drove and it
+ * is what the paper log shows. A state revisited later in the week appears
+ * again, even directly beneath an identical state, and each row keeps its own
+ * mileage and its own highway list.
+ *
+ * Each row's mileage is copied exactly as entered; nothing is summed, rounded
+ * or reconciled against the odometer here. The combined total adds every row.
  */
 function combineStateMiles(ordered: Trip[]): Trip['stateMiles'] {
-  const byState = new Map<string, { miles: number; highways: string[]; id: string }>()
-
-  for (const trip of ordered) {
-    for (const row of trip.stateMiles) {
-      const state = row.state.trim().toUpperCase()
-      if (!state) continue
-      const existing = byState.get(state)
-      const miles = parseWhole(row.miles) ?? 0
-      if (existing) {
-        existing.miles += miles
-        existing.highways.push(...splitHighways(row.highways))
-      } else {
-        byState.set(state, {
-          miles,
-          highways: splitHighways(row.highways),
-          id: `${trip.id}:${row.id}`,
-        })
-      }
-    }
-  }
-
-  return [...byState.entries()].map(([state, row]) => ({
-    id: row.id,
-    state,
-    miles: String(row.miles),
-    highways: uniqueJoin(row.highways),
-  }))
+  return ordered.flatMap((trip) =>
+    trip.stateMiles
+      .filter((row) => row.state.trim())
+      .map((row) => ({
+        // A temporary id unique across the envelope: the same source row can
+        // appear once per trip, and React needs distinct keys.
+        id: `${trip.id}:${row.id}`,
+        state: row.state.trim().toUpperCase(),
+        miles: row.miles,
+        highways: row.highways,
+      })),
+  )
 }
 
 /* ------------------------------------------------------------------ *

@@ -121,6 +121,93 @@ body {
   font-weight: 600;
 }
 
+/* ---------- mobile menu ---------- */
+
+/* The Menu button replaces the tab strip on phone-sized screens; the strip
+   takes over from 700px up, where it fits without much scrolling. */
+.menu-button {
+  display: none;
+  font-weight: 600;
+  padding: 7px 14px;
+}
+
+.nav-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 40;
+}
+
+.nav-menu-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(300px, 86vw);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  overflow-y: auto;
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.35);
+}
+
+.nav-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-menu-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.nav-menu-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-menu-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  padding: 11px 12px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.nav-menu-item:hover { background: var(--surface-alt); }
+
+.nav-menu-item[aria-current='page'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.nav-menu-here {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
 main {
   flex: 1;
   padding: 16px;
@@ -427,4 +514,13 @@ table input, table select { padding: 5px 6px; font-size: 13px; }
   .panel { padding: 13px; }
   .masthead { padding: 9px 12px; }
   .tabs { padding: 7px 12px; }
+}
+
+/* Below 700px the horizontally scrolling tab strip is replaced by the Menu
+   button, which reaches every section in one tap. */
+@media (max-width: 699px) {
+  .menu-button { display: inline-block; }
+  .tabs { display: none; }
+  .masthead { align-items: center; }
+  .masthead h1 { font-size: 16px; }
 }
